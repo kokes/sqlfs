@@ -34,6 +34,20 @@ class TestInitFS(InitTdir, unittest.TestCase):
             pass
 
 
+class TestTouchFile(InitFS, unittest.TestCase):
+    def test_touch(self):
+        with sqlfs.fs(os.path.join(self.tdir.name, 'fs.db')) as fs:
+            for mode in ['w', 'wt', 'wb']:
+                with fs.open('foobar.txt', mode) as f:
+                    pass
+
+                with fs.open('foobar.txt', 'rb') as f:
+                    self.assertEqual(f.read(), b'')
+
+                with fs.open('foobar.txt', 'r') as f:
+                    self.assertEqual(f.read(), '')
+
+
 class TestIteration(InitFS, unittest.TestCase):
     def setUp(self):
         super(TestIteration, self).setUp()
@@ -47,24 +61,24 @@ class TestIteration(InitFS, unittest.TestCase):
     def test_next_iter(self):
         with self.fs.open(self.fn, 'r') as f:
             self.assertEqual('abc\n', next(f))
-            # self.assertEqual(b'def\n', next(f))
-            # self.assertEqual(b'ghi\n', next(f))
+            self.assertEqual('def\n', next(f))
+            self.assertEqual('ghi', next(f))
 
         with self.fs.open(self.fn, 'rb') as f:
             self.assertEqual(b'abc\n', next(f))
-            # self.assertEqual(b'def\n', next(f))
-            # self.assertEqual(b'ghi\n', next(f))
+            self.assertEqual(b'def\n', next(f))
+            self.assertEqual(b'ghi', next(f))
 
     def test_readline(self):
         with self.fs.open(self.fn, 'r') as f:
             self.assertEqual('abc\n', f.readline())
-            # self.assertEqual(b'def\n', f.readline())
-            # self.assertEqual(b'ghi\n', f.readline())
+            self.assertEqual('def\n', f.readline())
+            self.assertEqual('ghi', f.readline())
 
         with self.fs.open(self.fn, 'rb') as f:
             self.assertEqual(b'abc\n', f.readline())
-            # self.assertEqual(b'def\n', f.readline())
-            # self.assertEqual(b'ghi\n', f.readline())
+            self.assertEqual(b'def\n', f.readline())
+            self.assertEqual(b'ghi', f.readline())
 
     def test_readlines(self):
         with self.fs.open(self.fn, 'r') as f:

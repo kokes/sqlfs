@@ -59,13 +59,17 @@ class _FileHandler:
         self._buffer = []
         self._position = 0
 
+        # truncating
         if mode in ['w', 'wb', 'wt']:
             self.fs.conn.execute('delete from files where name = ?', (path, ))
             self.fs.conn.commit()
-            # TODO: do we need to touch a new empty file?
-            # self._writeraw(b'')
-            # self.conn.execute('insert into files (name, offset) values(?, 0)',
-            #                   (path, ))
+
+            self.write('' if self._text_mode else b'')
+            # self.fs.conn.execute(
+            #     'insert into files (name, offset, contents_length, contents) values(?, ?, ?, ?)',
+            #     (self.path, 0, 0, b''))
+
+            self.fs.conn.commit()
 
     def __enter__(self):
         return self
@@ -153,7 +157,7 @@ class _FileHandler:
         assert size is None or size >= 0  # TODO (f.read(-1) should read all, f.read(-n) should read nothing)
 
         ex = self.fs.conn.execute(
-            'select offset, contents from files where name = ? and (offset + contents_length) > ? order by offset asc',
+            'select offset, contents from files where name = ? and (offset + contents_length) >= ? order by offset asc',
             (self.path, self._position))
 
         res = []
@@ -303,7 +307,7 @@ class _FileHandler:
                 if chunks == 0 and j == (len(self._buffer) - 1):
                     chunks = 1
 
-                assert chunks > 0 # TODO: remove
+                assert chunks > 0  # TODO: remove
 
                 for ch in range(chunks):
                     dt = towrite[ch * self.fs.max_sql_row_size:(
