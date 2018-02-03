@@ -197,8 +197,6 @@ class _FileHandler:
         if len(self._buffer) == 0:
             return
 
-        # TODO: executemany
-
         lastwrittenbyte = self.fs.conn.execute(
             'select offset+contents_length from files where name = ? order by offset desc limit 1',
             (self.path, )).fetchone()
@@ -265,8 +263,8 @@ class _FileHandler:
                             (rid, )).fetchone()[0]
 
                         start = exc[:self._position - offset]
-                        end = exc[(self._position + self._buffersize - offset
-                                   ):]
+                        end = exc[(
+                            self._position + self._buffersize - offset):]
                         self._buffer.insert(0, start)
                         self._buffer.append(end)
                         self._buffersize += len(start) + len(end)
@@ -292,6 +290,7 @@ class _FileHandler:
         roll = 0
         prevend = 0
         leftover = b''
+        ins = []
         for j, el in enumerate(self._buffer):
             roll += len(el)
             if roll > self.fs.max_sql_row_size or j == (len(self._buffer) - 1):
@@ -304,21 +303,26 @@ class _FileHandler:
                 if chunks == 0 and j == (len(self._buffer) - 1):
                     chunks = 1
 
-                assert chunks > 0
+                assert chunks > 0 # TODO: remove
 
                 for ch in range(chunks):
                     dt = towrite[ch * self.fs.max_sql_row_size:(
                         ch + 1) * self.fs.max_sql_row_size]
 
-                    self.fs.conn.execute(
-                        'insert into files(name, offset, contents_length, contents) values(?, ?, ?, ?)',
-                        (self.path, offset, len(dt), dt))
+                    ins.append((self.path, offset, len(dt), dt))
+                    # self.fs.conn.execute(
+                    #     'insert into files(name, offset, contents_length, contents) values(?, ?, ?, ?)',
+                    #     (self.path, offset, len(dt), dt))
                     offset += len(dt)
 
                 leftover = towrite[-(roll % self.fs.max_sql_row_size):]
 
                 roll = len(leftover)
                 prevend = j + 1
+
+        self.fs.conn.executemany(
+            'insert into files(name, offset, contents_length, contents) values(?, ?, ?, ?)',
+            ins)
 
         self.fs.conn.commit()
 
@@ -328,38 +332,3 @@ class _FileHandler:
     def close(self):
         self.fs.conn.commit()
         self.flush()
-
-
-if __name__ == '__main__':
-    import os
-
-    os.remove('fs.db')
-
-    with fs('fs.db') as sfs:
-        fn = 'foobar.txt'
-
-        content = 'Hello World'
-        with sfs.open(fn, 'w', max_sql_row_size=5) as f:
-            f.write(content)
-
-        with sfs.open(fn, 'r+') as f:
-            print(f.read())
-
-        # with sfs.open('foobar.txt', 'wb') as f:
-        #     # f.write('hello world' * 100)
-        #     f.write(b'abc\ndef\nghi')
-        #     f.seek(1)
-        #     f.write(b'eeek')
-
-        # with sfs.open('foobar.txt') as f:
-        #     for j, el in enumerate(f):
-        #         if j > 5:
-        #             break
-        #         print(el)
-
-        #     f.seek(0)
-        #     print(f.readlines())
-
-        # with sfs.open('foobar.txt') as f:
-        #     f.read(2)
-        #     print('seek', f.readline())
