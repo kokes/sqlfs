@@ -181,6 +181,25 @@ class TestOverflownRewrite(InitFS, unittest.TestCase):
         # with self.fs.open(self.fn, 'rt') as f:
         #     self.assertEqual(f.read(), 'aghijklmnop')
 
+class TestAppends(InitFS, unittest.TestCase):
+    def test_has_to_exist(self):
+        with self.assertRaises(OSError):
+            with self.fs.open('foobarbaz.txt', 'a') as f:
+                pass
+
+
+    def test_append(self):
+        self.fn = 'foobar.txt'
+
+        n = 10
+        for j in range(n):
+            with self.fs.open(self.fn, 'a+') as f:
+                f.write(str(j))
+
+        with self.fs.open(self.fn, 'r') as f:
+            cn = [str(j) for j in range(n)]
+            self.assertEqual(f.read(), ''.join(cn))
+
 
 if __name__ == '__main__':
     unittest.main()

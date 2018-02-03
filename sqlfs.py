@@ -40,14 +40,16 @@ class fs:
 
 class _FileHandler:
     def __init__(self, fs, path, mode='r', encoding='utf8'):
-        if mode not in ['r', 'rt', 'w', 'wt', 'rb', 'wb', 'r+']:
+        if mode not in ['r', 'rt', 'w', 'wt', 'rb', 'wb', 'r+', 'a+', 'a']:
             raise NotImplementedError('mode %s not implemented' % mode)
 
         self.fs = fs
-        self._text_mode = mode in ['r', 'w', 'rt', 'wt', 'r+']
+        self._text_mode = mode in ['r', 'w', 'rt', 'wt', 'r+', 'a', 'a+']
         self._read_mode = mode in ['r', 'rt', 'rb', 'r+']
-        self._write_mode = mode in ['w', 'wb', 'wt', 'r+']
-        self._seek_mode = mode in ['r', 'rt', 'rb']  # TODO: complete this
+        self._write_mode = mode in ['w', 'wb', 'wt', 'r+', 'a', 'a+']
+        self._seek_mode = mode in ['r', 'rt', 'rb', 'r+', 'w', 'wb',
+                                   'wt']  # TODO: complete this
+        self.mode = mode
 
         if not (self._read_mode or self._write_mode):
             raise ValueError('mode %s not properly setup' % mode)
@@ -59,17 +61,31 @@ class _FileHandler:
         self._buffer = []
         self._position = 0
 
+        # file exists?
+        lb = self.fs.conn.execute(
+            'select offset+contents_length from files where name = ? order by offset desc limit 1',
+            (self.path, )).fetchone()
+        file_exists = lb is not None
+
+        # in certain modes, files have to exist
+        if not file_exists and mode in ['a', 'r', 'rt', 'rb']:
+            raise OSError('file does not exist')
+
+        # seeking to the end to append
+        if file_exists and mode in ['a', 'a+']:
+            self._position = lb[0]
+
+        # adding an empty file
+        if not file_exists and self._write_mode:
+            self._touch()
+
         # truncating
-        if mode in ['w', 'wb', 'wt']:
-            self.fs.conn.execute('delete from files where name = ?', (path, ))
+        if file_exists and mode in ['w', 'wb', 'wt']:
+            self.fs.conn.execute('delete from files where name = ?',
+                                 (self.path, ))
             self.fs.conn.commit()
 
-            self.write('' if self._text_mode else b'')
-            # self.fs.conn.execute(
-            #     'insert into files (name, offset, contents_length, contents) values(?, ?, ?, ?)',
-            #     (self.path, 0, 0, b''))
-
-            self.fs.conn.commit()
+            self._touch()
 
     def __enter__(self):
         return self
@@ -83,6 +99,9 @@ class _FileHandler:
         except:
             pass  # it could have been closed already
 
+    def _touch(self):
+        self.write('' if self._text_mode else b'')
+
     def _addtobuffer(self, data):
         # append bytes either way
         bdata = data.encode() if isinstance(data, str) else data
@@ -93,6 +112,8 @@ class _FileHandler:
             self.flush()
 
     def seek(self, offset, from_what=0):
+        if not self._seek_mode:
+            raise IOError('cannot seek in mode %s' % self.mode)
         # TODO: https://stackoverflow.com/questions/21533391/seeking-from-end-of-file-throwing-unsupported-exception
         if from_what not in [0, 1, 2]:
             raise ValueError('whence can only be 0, 1 or 2')
@@ -215,7 +236,7 @@ class _FileHandler:
                 id, offset, contents_length from files
                 where name = ?
                 and
-                    (? >= offset and (offset + contents_length) > ?)
+                    (? >= offset and (offset + contents_length) >= ?)
                 order by offset asc
                 limit 1''',
                 (self.path, self._position, self._position)).fetchone()
@@ -234,7 +255,7 @@ class _FileHandler:
                             'select contents from files where id = ?',
                             (rid, )).fetchone()[0]
                         self._buffer.insert(0, exc)
-                        self._buffersize += exc
+                        self._buffersize += len(exc)
                         # TODO: defer this until after the write? Otherwise we might lose data mid-write
                         self.fs.conn.execute('delete from files where id = ?',
                                              (rid, ))
@@ -300,7 +321,7 @@ class _FileHandler:
             if roll > self.fs.max_sql_row_size or j == (len(self._buffer) - 1):
                 towrite = leftover + b''.join(self._buffer[prevend:j + 1])
 
-                assert len(towrite) == roll
+                assert len(towrite) == roll  # TODO: remove
 
                 chunks = math.ceil(roll / self.fs.max_sql_row_size)
                 # write something if it's the last one
@@ -314,9 +335,6 @@ class _FileHandler:
                         ch + 1) * self.fs.max_sql_row_size]
 
                     ins.append((self.path, offset, len(dt), dt))
-                    # self.fs.conn.execute(
-                    #     'insert into files(name, offset, contents_length, contents) values(?, ?, ?, ?)',
-                    #     (self.path, offset, len(dt), dt))
                     offset += len(dt)
 
                 leftover = towrite[-(roll % self.fs.max_sql_row_size):]
