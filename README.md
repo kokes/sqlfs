@@ -2,8 +2,9 @@ Reimplementation of Python's file IO, using SQLite for storage. This is *not* an
 
 ### Why?
 
-1. A single database file is very portable, copying many slow files may be a bit problematic when using external or network storage.
-3. Using a database will allow for a relatively simple versioning mechanism.
+1. A single database file is very portable, copying many small files may be a bit problematic when using external or network storage.
+2. Using a database will allow for a relatively simple versioning mechanism.
+3. Sometimes you want an in-memory filesystem to mock stuff.
 4. Hey, it was fun.
 
 This is not about performance (it's performing fairly poorly at the moment), more about usability and portability.
@@ -18,8 +19,14 @@ with sqlfs.fs('filesystem.db') as fs:
 		fl.write('this is my new content')
 		fl.seek(0)
 		fl.write('and overwriting')
+
+with sqlfs.fs(':memory:') as fs:
+	with fs.open('foobar.txt', 'w') as fl:
+		fl.write('my in memory filesystem!')
 ```
 
 ### Implementation
 
 It's fairly straightforward, each file is saved into one or more slices (its size is user defined). Say you define a slice to be 1024 bytes, a file of one megabyte will occupy a thousand slices. Each file could have been saved into a single blob in one row, but as the files should be seekable and appendable, I didn't want to rewrite one giant blob when a single byte is changed.
+
+The whole thing is in Python 3, there are zero dependencies beyond the standard library. This way it's easily embedded.
